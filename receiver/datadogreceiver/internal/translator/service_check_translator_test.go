@@ -6,6 +6,7 @@ package translator
 import (
 	"encoding/json"
 	"testing"
+	"time"
 
 	"github.com/DataDog/datadog-api-client-go/v2/api/datadogV1"
 	"github.com/stretchr/testify/assert"
@@ -15,7 +16,10 @@ import (
 	"go.opentelemetry.io/collector/pdata/pmetric"
 )
 
-var testTimestamp = int64(1700000000)
+var (
+	testTimestamp  = int64(1700000000)
+	testReceivedAt = time.Unix(1800000000, 123456789)
+)
 
 func TestHandleStructureParsing(t *testing.T) {
 	tests := []struct {
@@ -214,7 +218,41 @@ func TestTranslateCheckRun(t *testing.T) {
 				requireGauge(t, metric, "app.working", 1)
 
 				dp := metric.Gauge().DataPoints().At(0)
-				requireDp(t, dp, expectedAttrs.dp, 0, 0)
+				requireDp(t, dp, expectedAttrs.dp, testReceivedAt.Unix(), 0)
+			},
+		},
+		{
+			name: "checks with and without TS in one payload",
+			services: []ServiceCheck{
+				{
+					Check:    "app.first",
+					HostName: "foo",
+					Status:   datadogV1.SERVICECHECKSTATUS_OK,
+				},
+				{
+					Check:    "app.second",
+					HostName: "foo",
+					Status:   datadogV1.SERVICECHECKSTATUS_OK,
+				},
+				{
+					Check:     "app.timestamped",
+					HostName:  "foo",
+					Status:    datadogV1.SERVICECHECKSTATUS_OK,
+					Timestamp: testTimestamp,
+				},
+			},
+			expect: func(t *testing.T, result pmetric.Metrics) {
+				require.Equal(t, 3, result.DataPointCount())
+				timestamps := map[string]pcommon.Timestamp{}
+				metrics := result.ResourceMetrics().At(0).ScopeMetrics().At(0).Metrics()
+				for i := 0; i < metrics.Len(); i++ {
+					timestamps[metrics.At(i).Name()] = metrics.At(i).Gauge().DataPoints().At(0).Timestamp()
+				}
+				assert.Equal(t, map[string]pcommon.Timestamp{
+					"app.first":       pcommon.NewTimestampFromTime(testReceivedAt),
+					"app.second":      pcommon.NewTimestampFromTime(testReceivedAt),
+					"app.timestamped": pcommon.Timestamp(testTimestamp * time.Second.Nanoseconds()),
+				}, timestamps)
 			},
 		},
 	}
@@ -227,7 +265,7 @@ func TestTranslateCheckRun(t *testing.T) {
 				Description: "OpenTelemetry Collector",
 				Version:     "latest",
 			}
-			result := mt.TranslateServices(tt.services)
+			result := mt.TranslateServices(tt.services, testReceivedAt)
 
 			tt.expect(t, result)
 		})
@@ -301,7 +339,7 @@ func TestTranslateCheckRunStatuses(t *testing.T) {
 				Description: "OpenTelemetry Collector",
 				Version:     "latest",
 			}
-			result := mt.TranslateServices(tt.services)
+			result := mt.TranslateServices(tt.services, testReceivedAt)
 
 			require.Equal(t, 1, result.MetricCount())
 			require.Equal(t, 1, result.DataPointCount())

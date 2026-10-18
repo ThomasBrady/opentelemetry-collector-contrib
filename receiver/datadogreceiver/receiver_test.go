@@ -16,6 +16,7 @@ import (
 	"net/http/httputil"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/DataDog/agent-payload/v5/gogen"
 	intakev3 "github.com/DataDog/agent-payload/v5/metrics/intake_v3"
@@ -1148,8 +1149,10 @@ func TestDatadogServices_EndToEnd(t *testing.T) {
 	)
 	require.NoError(t, err, "Must not error when creating request")
 
+	before := time.Now()
 	resp, err := http.DefaultClient.Do(req)
 	require.NoError(t, err, "Must not error performing request")
+	after := time.Now()
 
 	body, err := io.ReadAll(resp.Body)
 	require.NoError(t, multierr.Combine(err, resp.Body.Close()), "Must not error when reading body")
@@ -1169,6 +1172,7 @@ func TestDatadogServices_EndToEnd(t *testing.T) {
 	assert.Equal(t, 1, dps.Len())
 	dp := dps.At(0)
 	assert.Equal(t, int64(2), dp.IntValue())
+	assert.WithinRange(t, dp.Timestamp().AsTime(), before, after, "a check without a timestamp is stamped when it is received")
 	assert.Equal(t, 1, dp.Attributes().Len())
 	environment, _ := dp.Attributes().Get("environment")
 	assert.Equal(t, "test", environment.AsString())

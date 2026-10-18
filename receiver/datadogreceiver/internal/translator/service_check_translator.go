@@ -22,7 +22,7 @@ type ServiceCheck struct {
 }
 
 // More information on Datadog service checks: https://docs.datadoghq.com/api/latest/service-checks/
-func (mt *MetricsTranslator) TranslateServices(services []ServiceCheck) pmetric.Metrics {
+func (mt *MetricsTranslator) TranslateServices(services []ServiceCheck, receivedAt time.Time) pmetric.Metrics {
 	bt := newBatcher()
 	bt.Metrics = pmetric.NewMetrics()
 
@@ -34,7 +34,12 @@ func (mt *MetricsTranslator) TranslateServices(services []ServiceCheck) pmetric.
 		dps.EnsureCapacity(1)
 
 		dp := dps.AppendEmpty()
-		dp.SetTimestamp(pcommon.Timestamp(service.Timestamp * time.Second.Nanoseconds())) // OTel uses nanoseconds, while Datadog uses seconds
+		// The timestamp is optional in Datadog's API. Without one, use the time the check was received rather than the Unix epoch.
+		ts := pcommon.NewTimestampFromTime(receivedAt)
+		if service.Timestamp != 0 {
+			ts = pcommon.Timestamp(service.Timestamp * time.Second.Nanoseconds()) // OTel uses nanoseconds, while Datadog uses seconds
+		}
+		dp.SetTimestamp(ts)
 		metricProperties.dpAttrs.CopyTo(dp.Attributes())
 		dp.SetIntValue(int64(service.Status))
 

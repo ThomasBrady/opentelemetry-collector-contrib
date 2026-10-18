@@ -629,6 +629,7 @@ func (ddr *datadogReceiver) handleV3Series(w http.ResponseWriter, req *http.Requ
 
 // handleCheckRun handles the service checks endpoint https://docs.datadoghq.com/api/latest/service-checks/
 func (ddr *datadogReceiver) handleCheckRun(w http.ResponseWriter, req *http.Request) {
+	receivedAt := time.Now()
 	obsCtx := ddr.tReceiver.StartMetricsOp(req.Context())
 	var err error
 	var metricsCount int
@@ -660,7 +661,7 @@ func (ddr *datadogReceiver) handleCheckRun(w http.ResponseWriter, req *http.Requ
 		services = append(services, service)
 	}
 
-	metrics := ddr.metricsTranslator.TranslateServices(services)
+	metrics := ddr.metricsTranslator.TranslateServices(services, receivedAt)
 	metricsCount = metrics.DataPointCount()
 
 	err = ddr.nextMetricsConsumer.ConsumeMetrics(obsCtx, metrics)
